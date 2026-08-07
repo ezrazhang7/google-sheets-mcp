@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
-import { applyBatchUpdate, resolveSheetId } from "../sheets.js";
+import type { GoogleClient } from "../google/client.js";
 import { columnToIndex, indexToColumn, parseSpreadsheetId } from "../utils/a1.js";
 import { jsonResult, runTool, textResult } from "../utils/result.js";
 import { sheetNameSchema, spreadsheetIdSchema } from "./shared.js";
@@ -30,16 +30,20 @@ interface DimensionOp {
   inheritFromBefore?: boolean | undefined;
 }
 
-async function applyDimensionOp(op: DimensionOp): Promise<string> {
+/** Shared implementation behind insert/delete of rows and columns. */
+async function applyDimensionOp(
+  client: GoogleClient,
+  op: DimensionOp,
+): Promise<string> {
   const id = parseSpreadsheetId(op.spreadsheetId);
-  const info = await resolveSheetId(id, op.sheet);
+  const info = await client.resolveSheet(id, op.sheet);
   const range = {
     sheetId: info.sheetId,
     dimension: op.dimension,
     startIndex: op.startIndex,
     endIndex: op.startIndex + op.count,
   };
-  await applyBatchUpdate(id, [
+  await client.batchUpdate(id, [
     op.kind === "insert"
       ? { insertDimension: { range, inheritFromBefore: op.inheritFromBefore ?? false } }
       : { deleteDimension: { range } },
@@ -49,10 +53,14 @@ async function applyDimensionOp(op: DimensionOp): Promise<string> {
     op.dimension === "ROWS"
       ? `row ${op.startIndex + 1}`
       : `column ${indexToColumn(op.startIndex)}`;
-  return `${op.kind === "insert" ? "Inserted" : "Deleted"} ${op.count} ${what} at ${at} in "${info.title}"`;
+  const verb = op.kind === "insert" ? "Inserted" : "Deleted";
+  return `${verb} ${op.count} ${what} at ${at} in "${info.title}"`;
 }
 
-export function registerStructureTools(server: McpServer): void {
+export function registerStructureTools(
+  server: McpServer,
+  client: GoogleClient,
+): void {
   server.registerTool(
     "insert_rows",
     {
@@ -73,7 +81,7 @@ export function registerStructureTools(server: McpServer): void {
     async ({ spreadsheetId, sheet, startRow, count, inheritFromBefore }) =>
       runTool(async () =>
         textResult(
-          await applyDimensionOp({
+          await applyDimensionOp(client, {
             spreadsheetId,
             sheet,
             dimension: "ROWS",
@@ -103,7 +111,7 @@ export function registerStructureTools(server: McpServer): void {
     async ({ spreadsheetId, sheet, startRow, count }) =>
       runTool(async () =>
         textResult(
-          await applyDimensionOp({
+          await applyDimensionOp(client, {
             spreadsheetId,
             sheet,
             dimension: "ROWS",
@@ -137,7 +145,7 @@ export function registerStructureTools(server: McpServer): void {
     async ({ spreadsheetId, sheet, startColumn, count, inheritFromBefore }) =>
       runTool(async () =>
         textResult(
-          await applyDimensionOp({
+          await applyDimensionOp(client, {
             spreadsheetId,
             sheet,
             dimension: "COLUMNS",
@@ -167,7 +175,7 @@ export function registerStructureTools(server: McpServer): void {
     async ({ spreadsheetId, sheet, startColumn, count }) =>
       runTool(async () =>
         textResult(
-          await applyDimensionOp({
+          await applyDimensionOp(client, {
             spreadsheetId,
             sheet,
             dimension: "COLUMNS",
@@ -194,7 +202,7 @@ export function registerStructureTools(server: McpServer): void {
     async ({ spreadsheetId, title, rows, columns }) =>
       runTool(async () => {
         const id = parseSpreadsheetId(spreadsheetId);
-        const res = await applyBatchUpdate(id, [
+        const res = await client.batchUpdate(id, [
           {
             addSheet: {
               properties: {
@@ -223,8 +231,8 @@ export function registerStructureTools(server: McpServer): void {
     async ({ spreadsheetId, sheet }) =>
       runTool(async () => {
         const id = parseSpreadsheetId(spreadsheetId);
-        const info = await resolveSheetId(id, sheet);
-        await applyBatchUpdate(id, [{ deleteSheet: { sheetId: info.sheetId } }]);
+        const info = await client.resolveSheet(id, sheet);
+        await client.batchUpdate(id, [{ deleteSheet: { sheetId: info.sheetId } }]);
         return textResult(`Deleted sheet "${info.title}"`);
       }),
   );

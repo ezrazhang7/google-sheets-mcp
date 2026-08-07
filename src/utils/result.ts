@@ -1,5 +1,5 @@
 import type { CallToolResult } from "@modelcontextprotocol/server";
-import { GaxiosError } from "googleapis-common";
+import { GoogleApiError } from "../google/client.js";
 
 /** Wrap a JSON-serializable payload as a successful tool result. */
 export function jsonResult(payload: unknown): CallToolResult {
@@ -17,29 +17,18 @@ export function errorResult(err: unknown): CallToolResult {
 }
 
 function describeError(err: unknown): string {
-  if (err instanceof GaxiosError) {
-    const status = err.response?.status;
-    const apiMessage =
-      (err.response?.data as { error?: { message?: string } } | undefined)?.error
-        ?.message ?? err.message;
+  if (err instanceof GoogleApiError) {
     const hint =
-      status === 403
+      err.status === 403
         ? " (check that the authorized account has access to this spreadsheet and that the required scopes were granted)"
-        : status === 404
+        : err.status === 404
           ? " (check the spreadsheet ID)"
-          : "";
-    return `Google Sheets API error${status ? ` ${status}` : ""}: ${apiMessage}${hint}`;
+          : err.status === 429
+            ? " (Google rate limit reached — wait a moment and retry)"
+            : "";
+    return `Google Sheets API error ${err.status}: ${err.message}${hint}`;
   }
-  const message = err instanceof Error ? err.message : String(err);
-  if (message.includes("Could not load the default credentials")) {
-    return (
-      "No Google credentials configured. Set GOOGLE_OAUTH_CLIENT_ID and " +
-      "GOOGLE_OAUTH_CLIENT_SECRET (recommended for personal use), or " +
-      "GOOGLE_SERVICE_ACCOUNT_KEY_FILE / GOOGLE_SERVICE_ACCOUNT_KEY, or " +
-      "GOOGLE_APPLICATION_CREDENTIALS. See the README for setup."
-    );
-  }
-  return message;
+  return err instanceof Error ? err.message : String(err);
 }
 
 /** Run a tool body, converting thrown errors into tool error results. */

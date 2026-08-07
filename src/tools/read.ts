@@ -1,19 +1,19 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
-import { getDrive, getSheets, listSheets, resolveSheetId } from "../sheets.js";
-import { parseSpreadsheetId, sheetRange } from "../utils/a1.js";
+import type { GoogleClient, ValueRenderOption } from "../google/client.js";
+import { parseSpreadsheetId } from "../utils/a1.js";
 import { jsonResult, runTool } from "../utils/result.js";
-import { spreadsheetIdSchema, sheetNameSchema } from "./shared.js";
+import { qualifyRange, sheetNameSchema, spreadsheetIdSchema } from "./shared.js";
 
 const SPREADSHEET_MIME = "application/vnd.google-apps.spreadsheet";
 
-const valueRenderMap = {
+const valueRenderMap: Record<string, ValueRenderOption> = {
   formatted: "FORMATTED_VALUE",
   raw: "UNFORMATTED_VALUE",
   formula: "FORMULA",
-} as const;
+};
 
-export function registerReadTools(server: McpServer): void {
+export function registerReadTools(server: McpServer, client: GoogleClient): void {
   server.registerTool(
     "list_spreadsheets",
     {
@@ -31,18 +31,12 @@ export function registerReadTools(server: McpServer): void {
     },
     async ({ nameContains, limit }) =>
       runTool(async () => {
-        const drive = await getDrive();
-        const qParts = [`mimeType='${SPREADSHEET_MIME}'`, "trashed=false"];
+        const clauses = [`mimeType='${SPREADSHEET_MIME}'`, "trashed=false"];
         if (nameContains) {
-          qParts.push(`name contains '${nameContains.replace(/'/g, "\\'")}'`);
+          clauses.push(`name contains '${nameContains.replace(/'/g, "\\'")}'`);
         }
-        const res = await drive.files.list({
-          q: qParts.join(" and "),
-          orderBy: "modifiedTime desc",
-          pageSize: limit,
-          fields: "files(id,name,modifiedTime,webViewLink)",
-        });
-        return jsonResult(res.data.files ?? []);
+        const data = await client.listSpreadsheetFiles(clauses.join(" and "), limit);
+        return jsonResult(data.files ?? []);
       }),
   );
 
@@ -58,16 +52,15 @@ export function registerReadTools(server: McpServer): void {
     async ({ spreadsheetId }) =>
       runTool(async () => {
         const id = parseSpreadsheetId(spreadsheetId);
-        const sheets = await getSheets();
-        const res = await sheets.spreadsheets.get({
-          spreadsheetId: id,
-          fields: "spreadsheetId,properties(title),spreadsheetUrl",
-        });
+        const data = await client.getSpreadsheet(
+          id,
+          "spreadsheetId,spreadsheetUrl,properties(title)",
+        );
         return jsonResult({
-          spreadsheetId: res.data.spreadsheetId,
-          title: res.data.properties?.title,
-          url: res.data.spreadsheetUrl,
-          sheets: await listSheets(id),
+          spreadsheetId: data.spreadsheetId,
+          title: data.properties?.title,
+          url: data.spreadsheetUrl,
+          sheets: await client.listSheets(id),
         });
       }),
   );
@@ -97,27 +90,12 @@ export function registerReadTools(server: McpServer): void {
     async ({ spreadsheetId, sheet, range, render }) =>
       runTool(async () => {
         const id = parseSpreadsheetId(spreadsheetId);
-        const sheets = await getSheets();
-        const res = await sheets.spreadsheets.values.get({
-          spreadsheetId: id,
-          range: await qualifyRange(id, sheet, range),
-          valueRenderOption: valueRenderMap[render],
-        });
-        return jsonResult({
-          range: res.data.range,
-          values: res.data.values ?? [],
-        });
+        const data = await client.getValues(
+          id,
+          await qualifyRange(client, id, sheet, range),
+          valueRenderMap[render] ?? "FORMATTED_VALUE",
+        );
+        return jsonResult({ range: data.range, values: data.values ?? [] });
       }),
   );
-}
-
-/** Build a sheet-qualified A1 range, defaulting to the first sheet. */
-export async function qualifyRange(
-  spreadsheetId: string,
-  sheet: string | undefined,
-  range: string | undefined,
-): Promise<string> {
-  if (range?.includes("!")) return range;
-  const info = await resolveSheetId(spreadsheetId, sheet);
-  return sheetRange(info.title, range);
 }

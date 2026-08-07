@@ -1,12 +1,14 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
-import type { sheets_v4 } from "googleapis";
-import { applyBatchUpdate, resolveSheetId } from "../sheets.js";
+import type { GoogleClient } from "../google/client.js";
 import { parseSpreadsheetId } from "../utils/a1.js";
 import { jsonResult, runTool } from "../utils/result.js";
 import { sheetNameSchema, spreadsheetIdSchema } from "./shared.js";
 
-export function registerAdvancedTools(server: McpServer): void {
+export function registerAdvancedTools(
+  server: McpServer,
+  client: GoogleClient,
+): void {
   server.registerTool(
     "find_replace",
     {
@@ -33,7 +35,7 @@ export function registerAdvancedTools(server: McpServer): void {
     async (args) =>
       runTool(async () => {
         const id = parseSpreadsheetId(args.spreadsheetId);
-        const request: sheets_v4.Schema$FindReplaceRequest = {
+        const findReplace: Record<string, unknown> = {
           find: args.find,
           replacement: args.replacement,
           matchCase: args.matchCase,
@@ -42,11 +44,11 @@ export function registerAdvancedTools(server: McpServer): void {
           includeFormulas: args.searchFormulas,
         };
         if (args.allSheets) {
-          request.allSheets = true;
+          findReplace["allSheets"] = true;
         } else {
-          request.sheetId = (await resolveSheetId(id, args.sheet)).sheetId;
+          findReplace["sheetId"] = (await client.resolveSheet(id, args.sheet)).sheetId;
         }
-        const res = await applyBatchUpdate(id, [{ findReplace: request }]);
+        const res = await client.batchUpdate(id, [{ findReplace }]);
         const stats = res.replies?.[0]?.findReplace;
         return jsonResult({
           replacedValues: stats?.valuesChanged ?? 0,
@@ -73,10 +75,7 @@ export function registerAdvancedTools(server: McpServer): void {
     async ({ spreadsheetId, requests }) =>
       runTool(async () => {
         const id = parseSpreadsheetId(spreadsheetId);
-        const res = await applyBatchUpdate(
-          id,
-          requests as sheets_v4.Schema$Request[],
-        );
+        const res = await client.batchUpdate(id, requests);
         return jsonResult({ replies: res.replies ?? [] });
       }),
   );

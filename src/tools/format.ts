@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
-import type { sheets_v4 } from "googleapis";
-import { applyBatchUpdate } from "../sheets.js";
+import type { GoogleClient } from "../google/client.js";
+import type { CellFormat, Color, TextFormat } from "../google/types.js";
 import { parseSpreadsheetId } from "../utils/a1.js";
 import { runTool, textResult } from "../utils/result.js";
 import { sheetNameSchema, spreadsheetIdSchema, toGridRange } from "./shared.js";
@@ -10,7 +10,7 @@ const hexColorSchema = z
   .string()
   .regex(/^#?[0-9a-fA-F]{6}$/, 'Expected a hex color like "#FF8800"');
 
-function toColor(hex: string): sheets_v4.Schema$Color {
+function toColor(hex: string): Color {
   const n = parseInt(hex.replace("#", ""), 16);
   return {
     red: ((n >> 16) & 0xff) / 255,
@@ -19,7 +19,10 @@ function toColor(hex: string): sheets_v4.Schema$Color {
   };
 }
 
-export function registerFormatTools(server: McpServer): void {
+export function registerFormatTools(
+  server: McpServer,
+  client: GoogleClient,
+): void {
   server.registerTool(
     "format_cells",
     {
@@ -48,12 +51,12 @@ export function registerFormatTools(server: McpServer): void {
     async (args) =>
       runTool(async () => {
         const id = parseSpreadsheetId(args.spreadsheetId);
-        const range = await toGridRange(id, args.sheet, args.range);
+        const range = await toGridRange(client, id, args.sheet, args.range);
         const { format, fields } = buildFormat(args);
         if (fields.length === 0) {
           throw new Error("No formatting options were provided.");
         }
-        await applyBatchUpdate(id, [
+        await client.batchUpdate(id, [
           {
             repeatCell: {
               range,
@@ -79,13 +82,10 @@ interface FormatArgs {
 }
 
 /** Build a CellFormat and the matching field mask from the provided options. */
-function buildFormat(args: FormatArgs): {
-  format: sheets_v4.Schema$CellFormat;
-  fields: string[];
-} {
-  const format: sheets_v4.Schema$CellFormat = {};
+function buildFormat(args: FormatArgs): { format: CellFormat; fields: string[] } {
+  const format: CellFormat = {};
   const fields: string[] = [];
-  const textFormat: sheets_v4.Schema$TextFormat = {};
+  const textFormat: TextFormat = {};
 
   if (args.bold !== undefined) {
     textFormat.bold = args.bold;

@@ -1,17 +1,17 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
-import { applyBatchUpdate, getSheets } from "../sheets.js";
+import type { GoogleClient } from "../google/client.js";
 import { parseSpreadsheetId } from "../utils/a1.js";
 import { jsonResult, runTool, textResult } from "../utils/result.js";
 import {
+  qualifyRange,
   rowsSchema,
   sheetNameSchema,
   spreadsheetIdSchema,
   toGridRange,
 } from "./shared.js";
-import { qualifyRange } from "./read.js";
 
-export function registerWriteTools(server: McpServer): void {
+export function registerWriteTools(server: McpServer, client: GoogleClient): void {
   server.registerTool(
     "update_cells",
     {
@@ -38,16 +38,15 @@ export function registerWriteTools(server: McpServer): void {
     async ({ spreadsheetId, sheet, range, values, literal }) =>
       runTool(async () => {
         const id = parseSpreadsheetId(spreadsheetId);
-        const sheets = await getSheets();
-        const res = await sheets.spreadsheets.values.update({
-          spreadsheetId: id,
-          range: await qualifyRange(id, sheet, range),
-          valueInputOption: literal ? "RAW" : "USER_ENTERED",
-          requestBody: { values },
-        });
+        const data = await client.updateValues(
+          id,
+          await qualifyRange(client, id, sheet, range),
+          values,
+          literal ? "RAW" : "USER_ENTERED",
+        );
         return jsonResult({
-          updatedRange: res.data.updatedRange,
-          updatedCells: res.data.updatedCells,
+          updatedRange: data.updatedRange,
+          updatedCells: data.updatedCells,
         });
       }),
   );
@@ -73,17 +72,14 @@ export function registerWriteTools(server: McpServer): void {
     async ({ spreadsheetId, sheet, values, range }) =>
       runTool(async () => {
         const id = parseSpreadsheetId(spreadsheetId);
-        const sheets = await getSheets();
-        const res = await sheets.spreadsheets.values.append({
-          spreadsheetId: id,
-          range: await qualifyRange(id, sheet, range),
-          valueInputOption: "USER_ENTERED",
-          insertDataOption: "INSERT_ROWS",
-          requestBody: { values },
-        });
+        const data = await client.appendValues(
+          id,
+          await qualifyRange(client, id, sheet, range),
+          values,
+        );
         return jsonResult({
-          appendedRange: res.data.updates?.updatedRange,
-          appendedRows: res.data.updates?.updatedRows,
+          appendedRange: data.updates?.updatedRange,
+          appendedRows: data.updates?.updatedRows,
         });
       }),
   );
@@ -103,12 +99,11 @@ export function registerWriteTools(server: McpServer): void {
     async ({ spreadsheetId, sheet, range }) =>
       runTool(async () => {
         const id = parseSpreadsheetId(spreadsheetId);
-        const sheets = await getSheets();
-        const res = await sheets.spreadsheets.values.clear({
-          spreadsheetId: id,
-          range: await qualifyRange(id, sheet, range),
-        });
-        return textResult(`Cleared ${res.data.clearedRange}`);
+        const data = await client.clearValues(
+          id,
+          await qualifyRange(client, id, sheet, range),
+        );
+        return textResult(`Cleared ${data.clearedRange}`);
       }),
   );
 
@@ -121,9 +116,7 @@ export function registerWriteTools(server: McpServer): void {
       inputSchema: z.object({
         spreadsheetId: spreadsheetIdSchema,
         sheet: sheetNameSchema,
-        range: z
-          .string()
-          .describe('A1 range to fill, e.g. "D2:D100"'),
+        range: z.string().describe('A1 range to fill, e.g. "D2:D100"'),
         formula: z
           .string()
           .describe(
@@ -134,15 +127,13 @@ export function registerWriteTools(server: McpServer): void {
     async ({ spreadsheetId, sheet, range, formula }) =>
       runTool(async () => {
         const id = parseSpreadsheetId(spreadsheetId);
-        const gridRange = await toGridRange(id, sheet, range);
+        const gridRange = await toGridRange(client, id, sheet, range);
         const formulaValue = formula.startsWith("=") ? formula : `=${formula}`;
-        await applyBatchUpdate(id, [
+        await client.batchUpdate(id, [
           {
             repeatCell: {
               range: gridRange,
-              cell: {
-                userEnteredValue: { formulaValue },
-              },
+              cell: { userEnteredValue: { formulaValue } },
               fields: "userEnteredValue",
             },
           },

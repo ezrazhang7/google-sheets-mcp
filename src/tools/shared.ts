@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { sheets_v4 } from "googleapis";
-import { resolveSheetId } from "../sheets.js";
-import { parseA1Range, splitSheetRef } from "../utils/a1.js";
+import type { GoogleClient } from "../google/client.js";
+import type { GridRange } from "../google/types.js";
+import { parseA1Range, sheetRange, splitSheetRef } from "../utils/a1.js";
 
 export const spreadsheetIdSchema = z
   .string()
@@ -14,9 +14,7 @@ export const sheetNameSchema = z
 
 export const cellValueSchema = z
   .union([z.string(), z.number(), z.boolean(), z.null()])
-  .describe(
-    'A cell value; strings starting with "=" are entered as formulas',
-  );
+  .describe('A cell value; strings starting with "=" are entered as formulas');
 
 export const rowsSchema = z
   .array(z.array(cellValueSchema))
@@ -28,12 +26,25 @@ export const rowsSchema = z
  * overrides the `sheet` argument.
  */
 export async function toGridRange(
+  client: GoogleClient,
   spreadsheetId: string,
   sheet: string | undefined,
   range: string | undefined,
-): Promise<sheets_v4.Schema$GridRange> {
+): Promise<GridRange> {
   const split = range ? splitSheetRef(range) : {};
-  const info = await resolveSheetId(spreadsheetId, split.sheetName ?? sheet);
+  const info = await client.resolveSheet(spreadsheetId, split.sheetName ?? sheet);
   const bounds = split.range ? parseA1Range(split.range) : {};
   return { sheetId: info.sheetId, ...bounds };
+}
+
+/** Build a sheet-qualified A1 range, defaulting to the first sheet. */
+export async function qualifyRange(
+  client: GoogleClient,
+  spreadsheetId: string,
+  sheet: string | undefined,
+  range: string | undefined,
+): Promise<string> {
+  if (range?.includes("!")) return range;
+  const info = await client.resolveSheet(spreadsheetId, sheet);
+  return sheetRange(info.title, range);
 }
