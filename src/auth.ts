@@ -4,10 +4,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
-import { GoogleAuth, OAuth2Client } from "google-auth-library";
+import { Auth } from "googleapis";
+
+const { GoogleAuth, OAuth2Client } = Auth;
 
 /** Auth types accepted directly by the googleapis client constructors. */
-export type SheetsAuth = GoogleAuth | OAuth2Client;
+export type SheetsAuth = Auth.GoogleAuth | Auth.OAuth2Client;
 
 const DEFAULT_SCOPES = [
   // Read and write cell data, formulas, formatting, and sheet structure.
@@ -46,25 +48,27 @@ export async function getAuthClient(): Promise<SheetsAuth> {
   const oauthId = process.env.GOOGLE_OAUTH_CLIENT_ID;
   const oauthSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
 
+  let client: SheetsAuth;
   if (inlineKey) {
-    cachedClient = new GoogleAuth({
+    client = new GoogleAuth({
       credentials: JSON.parse(inlineKey),
       scopes: scopes(),
     });
   } else if (keyFile) {
-    cachedClient = new GoogleAuth({ keyFile, scopes: scopes() });
+    client = new GoogleAuth({ keyFile, scopes: scopes() });
   } else if (oauthId && oauthSecret) {
-    cachedClient = await getOAuthClient(oauthId, oauthSecret);
+    client = await getOAuthClient(oauthId, oauthSecret);
   } else {
-    cachedClient = new GoogleAuth({ scopes: scopes() });
+    client = new GoogleAuth({ scopes: scopes() });
   }
-  return cachedClient;
+  cachedClient = client;
+  return client;
 }
 
 async function getOAuthClient(
   clientId: string,
   clientSecret: string,
-): Promise<OAuth2Client> {
+): Promise<Auth.OAuth2Client> {
   const client = new OAuth2Client({ clientId, clientSecret });
   client.on("tokens", (tokens) => {
     // Persist refreshed access tokens (and any new refresh token) as they arrive.
@@ -106,7 +110,7 @@ async function saveTokens(tokens: StoredTokens): Promise<void> {
  * Desktop OAuth loopback flow: listen on an ephemeral localhost port, open the
  * consent URL in a browser, and trade the returned code for tokens.
  */
-async function runLoopbackFlow(client: OAuth2Client): Promise<StoredTokens> {
+async function runLoopbackFlow(client: Auth.OAuth2Client): Promise<StoredTokens> {
   return new Promise((resolve, reject) => {
     const server = createServer(async (req, res) => {
       const url = new URL(req.url ?? "/", "http://127.0.0.1");
