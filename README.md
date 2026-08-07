@@ -1,14 +1,21 @@
 # Google Sheets MCP
 
-An MCP server that lets Claude (including Claude Cowork and Claude Desktop) work with
-your Google Sheets **in place** — no more "here's a new spreadsheet" every time.
+An MCP server that lets Claude work with your Google Sheets **in place** — no more
+"here's a new spreadsheet" every time.
 
 Read data, edit cells inline with natural language, append rows, insert/delete rows and
 columns, fill formulas, format cells, and find & replace — all against the sheet you
 already have open.
 
+Runs two ways from one codebase:
+
+- **Local** — a `.mcpb` desktop extension for Claude Desktop and local Cowork sessions.
+- **Remote** — a Cloudflare Worker you add as a custom connector, which also works in
+  **cloud Cowork sessions, claude.ai on the web, and mobile**.
+
 Built on the [MCP TypeScript SDK v2](https://github.com/modelcontextprotocol/typescript-sdk)
-(2026-07-28 spec) and the Google Sheets API v4.
+(2026-07-28 spec) and the Google Sheets API v4, with no Google SDK dependency — just
+`fetch` and WebCrypto, so the same code runs on Node and in V8 isolates.
 
 ## Tools
 
@@ -31,60 +38,93 @@ Built on the [MCP TypeScript SDK v2](https://github.com/modelcontextprotocol/typ
 Spreadsheet IDs can be given as bare IDs **or full Google Sheets URLs**. Rows are 1-based
 numbers and columns are letters, exactly as in the Sheets UI.
 
-## Setup
+## 1. Google Cloud credentials (one-time, needed either way)
 
-### 1. Google Cloud credentials (one-time)
-
-1. In [Google Cloud Console](https://console.cloud.google.com/), create (or pick) a project.
+1. In [Google Cloud Console](https://console.cloud.google.com/), create or pick a project.
 2. Enable the **Google Sheets API** and **Google Drive API**.
-3. Under **APIs & Services → Credentials**, create an **OAuth client ID** of type
-   **Desktop app**. Note the client ID and secret.
-   - Alternative: create a **service account** key instead, and share your sheets with
-     the service account's email address.
+3. **APIs & Services → OAuth consent screen**: set it up, add yourself under **Test users**.
+   Consider **Publish app** — while in Testing mode Google expires refresh tokens after 7 days.
+4. **APIs & Services → Credentials → Create Credentials → OAuth client ID →
+   Desktop app**. Save the **Client ID** and **Client Secret**.
 
-### 2a. Install into Claude Desktop / Cowork (recommended)
+> The Sheets and Drive APIs are free to use, and this project never needs a Cloud billing
+> account attached. Leaving billing unattached is the simplest guarantee against charges.
+
+## 2a. Local install (Claude Desktop / local Cowork sessions)
 
 ```bash
 npm install
-npm run pack        # builds and produces google-sheets.mcpb
+npm run pack        # builds and produces google-sheets.mcpb (~1.7 MB)
 ```
 
-Double-click `google-sheets.mcpb` (or Claude Desktop → Settings → Extensions →
-Install Extension…), then paste your OAuth client ID and secret in the extension
-settings. On first use a browser window opens to authorize your Google account;
-tokens are cached at `~/.config/google-sheets-mcp/token.json`.
+Double-click `google-sheets.mcpb`, or Claude Desktop → **Settings → Extensions →
+Install Extension…**. Paste your Client ID and Secret into the extension settings.
+On first use a browser opens to authorize; the refresh token is cached at
+`~/.config/google-sheets-mcp/token.json`.
 
-### 2b. Or run as a plain local MCP server
+> Local MCP servers do **not** run in cloud Cowork sessions or on claude.ai — for those,
+> use the remote deployment below.
 
-Add to your MCP client config (e.g. `claude_desktop_config.json`):
+## 2b. Remote install (cloud Cowork sessions, web, mobile)
 
-```json
-{
-  "mcpServers": {
-    "google-sheets": {
-      "command": "node",
-      "args": ["/path/to/google-sheets-mcp/dist/index.js"],
-      "env": {
-        "GOOGLE_OAUTH_CLIENT_ID": "…apps.googleusercontent.com",
-        "GOOGLE_OAUTH_CLIENT_SECRET": "…"
-      }
-    }
-  }
-}
+**Mint a refresh token** — this runs the same browser consent flow and prints a
+long-lived token for the server to use:
+
+```bash
+GOOGLE_OAUTH_CLIENT_ID=…apps.googleusercontent.com \
+GOOGLE_OAUTH_CLIENT_SECRET=… \
+npm run mint-token
 ```
 
-### Configuration reference
+**Pick a bearer token.** This is the shared secret Claude must present on every request:
 
-| Env var | Purpose |
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+```
+
+**Deploy to Cloudflare Workers** (free tier is plenty; the Worker is ~174 KB gzipped):
+
+```bash
+npx wrangler login
+npx wrangler secret put MCP_BEARER_TOKEN            # the value you just generated
+npx wrangler secret put GOOGLE_OAUTH_CLIENT_ID
+npx wrangler secret put GOOGLE_OAUTH_CLIENT_SECRET
+npx wrangler secret put GOOGLE_REFRESH_TOKEN        # from mint-token
+npm run deploy
+```
+
+Wrangler prints a URL like `https://google-sheets-mcp.<you>.workers.dev`. Verify it with
+`curl https://…/health` — it should return `ok`.
+
+**Add it to Claude**: Settings → **Connectors** → **Add custom connector**.
+
+- **URL**: `https://google-sheets-mcp.<you>.workers.dev/mcp`
+- Under advanced/header settings, send `Authorization: Bearer <your MCP_BEARER_TOKEN>`
+
+### Security notes
+
+- The endpoint is public, so the bearer token is the only thing standing between the
+  internet and your spreadsheets. Use a long random value and treat it like a password.
+- Auth **fails closed**: if `MCP_BEARER_TOKEN` is unset, every request to `/mcp` is
+  rejected with 401 rather than running unauthenticated.
+- Token comparison is constant-time, so the secret can't be recovered by timing.
+- `GOOGLE_REFRESH_TOKEN` grants access to every spreadsheet your account can open. To
+  narrow that, use a service account instead (`GOOGLE_SERVICE_ACCOUNT_KEY`, inline JSON)
+  and share only specific sheets with its email address.
+- To revoke everything at once: [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
+
+## Configuration reference
+
+| Env var / secret | Purpose |
 |---|---|
-| `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` | OAuth desktop flow (acts as you) |
-| `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` | Path to a service-account JSON key |
-| `GOOGLE_SERVICE_ACCOUNT_KEY` | Inline service-account JSON |
-| `GOOGLE_APPLICATION_CREDENTIALS` | Standard ADC fallback |
-| `GSHEETS_TOKEN_PATH` | Override OAuth token cache location |
-| `GSHEETS_SCOPES` | Override requested OAuth scopes |
+| `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` | OAuth client (both modes) |
+| `GOOGLE_REFRESH_TOKEN` | Pre-minted refresh token (required for remote) |
+| `GOOGLE_SERVICE_ACCOUNT_KEY` | Inline service-account JSON (alternative to OAuth) |
+| `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` | Path to a service-account key (local only) |
+| `MCP_BEARER_TOKEN` | Shared secret required by the remote endpoint |
+| `GSHEETS_TOKEN_PATH` | Override the local token cache location |
 
-Default scopes: `spreadsheets` (read/write) + `drive.metadata.readonly` (list/search files).
+Scopes: `spreadsheets` (read/write) + `drive.metadata.readonly` (list/search files).
 
 ## Development
 
@@ -92,17 +132,24 @@ Default scopes: `spreadsheets` (read/write) + `drive.metadata.readonly` (list/se
 npm install
 npm run build       # compile to dist/
 npm run typecheck   # tsc --noEmit
-npm run pack        # build + package .mcpb bundle
+npm run pack        # build + package the .mcpb bundle
+npm run dev:worker  # run the Worker locally via wrangler
+npm run deploy      # deploy the Worker
 ```
-
-Source layout:
 
 ```
 src/
-  index.ts        stdio entry point
-  server.ts       server factory: registers all tool groups
-  auth.ts         OAuth loopback / service account / ADC resolution
-  sheets.ts       googleapis client wrappers + sheet resolution
-  tools/          one module per tool group (read, write, structure, format, advanced)
-  utils/          A1-notation parsing, tool result/error helpers
+  index.ts          stdio entry point (local)
+  worker.ts         Cloudflare Worker entry (remote) + bearer auth
+  server.ts         server factory: registers all tool groups
+  config.ts         credentials → token provider, shared by both entries
+  google/
+    auth.ts         fetch + WebCrypto token providers (refresh token, service account)
+    client.ts       REST client for the Sheets/Drive endpoints used
+    types.ts        minimal API types
+  node/
+    localOAuth.ts   Node-only desktop OAuth loopback flow
+    mintToken.ts    CLI to print a refresh token for remote deploys
+  tools/            one module per tool group (read, write, structure, format, advanced)
+  utils/            A1-notation parsing, tool result/error helpers
 ```
