@@ -7,7 +7,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "pack": "npm run build && mcpb pack . google-sheets.mcpb"
   },
   "repository": {
     "type": "git",
@@ -34,6 +35,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@anthropic-ai/mcpb": "^2.1.2",
     "@types/node": "^26.2.0",
     "typescript": "^7.0.2"
   }

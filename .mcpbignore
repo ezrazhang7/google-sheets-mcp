@@ -1,0 +1,10 @@
+# Keep the bundle to runtime files only
+src/
+dist/**/*.map
+node_modules/@anthropic-ai/mcpb/
+node_modules/typescript/
+node_modules/@types/
+tsconfig.json
+RESEARCH.md
+*.log
+.git/
