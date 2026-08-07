@@ -36,6 +36,68 @@ export function sheetRange(sheetName: string, range?: string): string {
   return range ? `${quoteSheetName(sheetName)}!${range}` : quoteSheetName(sheetName);
 }
 
+/** The row/column bounds of an A1 range, 0-based and half-open, as used by GridRange. */
+export interface GridRangeParts {
+  startRowIndex?: number;
+  endRowIndex?: number;
+  startColumnIndex?: number;
+  endColumnIndex?: number;
+}
+
+/**
+ * Split an A1 reference that may carry a sheet prefix
+ * (`'My Sheet'!A1:B2` or `Sheet1!A1`) into sheet name and bare range.
+ */
+export function splitSheetRef(ref: string): { sheetName?: string; range?: string } {
+  const bang = ref.lastIndexOf("!");
+  if (bang === -1) return { range: ref || undefined };
+  let sheetName = ref.slice(0, bang);
+  if (sheetName.startsWith("'") && sheetName.endsWith("'")) {
+    sheetName = sheetName.slice(1, -1).replace(/''/g, "'");
+  }
+  return { sheetName, range: ref.slice(bang + 1) || undefined };
+}
+
+/**
+ * Parse a bare A1 range (no sheet prefix) into 0-based half-open GridRange
+ * bounds. Supports "A1:C10", "A1", "A:C" (whole columns), and "2:5" (whole rows).
+ */
+export function parseA1Range(range: string): GridRangeParts {
+  const parts = range.split(":");
+  if (parts.length > 2 || parts[0] === "") {
+    throw new Error(`Invalid A1 range: "${range}"`);
+  }
+  const start = parseA1Cell(parts[0]!);
+  const end = parts.length === 2 ? parseA1Cell(parts[1]!) : start;
+  if (
+    (start.col === undefined) !== (end.col === undefined) ||
+    (start.row === undefined) !== (end.row === undefined)
+  ) {
+    throw new Error(`Invalid A1 range: "${range}"`);
+  }
+  const out: GridRangeParts = {};
+  if (start.col !== undefined && end.col !== undefined) {
+    out.startColumnIndex = Math.min(start.col, end.col);
+    out.endColumnIndex = Math.max(start.col, end.col) + 1;
+  }
+  if (start.row !== undefined && end.row !== undefined) {
+    out.startRowIndex = Math.min(start.row, end.row);
+    out.endRowIndex = Math.max(start.row, end.row) + 1;
+  }
+  return out;
+}
+
+function parseA1Cell(cell: string): { col?: number; row?: number } {
+  const match = cell.trim().match(/^([A-Za-z]+)?([0-9]+)?$/);
+  if (!match || (!match[1] && !match[2])) {
+    throw new Error(`Invalid A1 cell reference: "${cell}"`);
+  }
+  return {
+    col: match[1] ? columnToIndex(match[1]) : undefined,
+    row: match[2] ? Number(match[2]) - 1 : undefined,
+  };
+}
+
 /**
  * Accept either a bare spreadsheet ID or a full Google Sheets URL and
  * return the spreadsheet ID.
