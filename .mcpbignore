@@ -1,10 +1,10 @@
-# Keep the bundle to runtime files only
-src/
-dist/**/*.map
-node_modules/@anthropic-ai/mcpb/
-node_modules/typescript/
-node_modules/@types/
-tsconfig.json
-RESEARCH.md
-*.log
-.git/
+# Patterns are gitignore-style. Keep them anchored with a leading "/" —
+# a bare "src/" would also match node_modules/*/build/src and gut the
+# runtime code of googleapis and friends.
+/src/
+/tsconfig.json
+/RESEARCH.md
+/google-sheets.mcpb
+/node_modules/@anthropic-ai/mcpb/
+/node_modules/typescript/
+/node_modules/@types/
