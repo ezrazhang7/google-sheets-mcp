@@ -5,7 +5,9 @@ import { homedir } from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
 import { GoogleAuth, OAuth2Client } from "google-auth-library";
-import type { AuthClient } from "google-auth-library";
+
+/** Auth types accepted directly by the googleapis client constructors. */
+export type SheetsAuth = GoogleAuth | OAuth2Client;
 
 const DEFAULT_SCOPES = [
   // Read and write cell data, formulas, formatting, and sheet structure.
@@ -26,7 +28,7 @@ function tokenCachePath(): string {
   );
 }
 
-let cachedClient: AuthClient | undefined;
+let cachedClient: SheetsAuth | undefined;
 
 /**
  * Resolve a Google auth client, trying in order:
@@ -36,7 +38,7 @@ let cachedClient: AuthClient | undefined;
  *     with tokens cached across runs
  *  4. Application Default Credentials (GOOGLE_APPLICATION_CREDENTIALS, gcloud)
  */
-export async function getAuthClient(): Promise<AuthClient> {
+export async function getAuthClient(): Promise<SheetsAuth> {
   if (cachedClient) return cachedClient;
 
   const inlineKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
@@ -45,19 +47,16 @@ export async function getAuthClient(): Promise<AuthClient> {
   const oauthSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
 
   if (inlineKey) {
-    const auth = new GoogleAuth({
+    cachedClient = new GoogleAuth({
       credentials: JSON.parse(inlineKey),
       scopes: scopes(),
     });
-    cachedClient = await auth.getClient();
   } else if (keyFile) {
-    const auth = new GoogleAuth({ keyFile, scopes: scopes() });
-    cachedClient = await auth.getClient();
+    cachedClient = new GoogleAuth({ keyFile, scopes: scopes() });
   } else if (oauthId && oauthSecret) {
     cachedClient = await getOAuthClient(oauthId, oauthSecret);
   } else {
-    const auth = new GoogleAuth({ scopes: scopes() });
-    cachedClient = await auth.getClient();
+    cachedClient = new GoogleAuth({ scopes: scopes() });
   }
   return cachedClient;
 }
