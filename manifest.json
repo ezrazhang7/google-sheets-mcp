@@ -3,19 +3,25 @@
   "manifest_version": "0.4",
   "name": "google-sheets-mcp",
   "display_name": "Google Sheets",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Read and edit Google Sheets in place: update cells, append rows, insert/delete rows and columns, write formulas, format, and find & replace.",
   "author": {
     "name": "Ezra Zhang"
   },
   "license": "MIT",
-  "keywords": ["google-sheets", "spreadsheet", "mcp"],
+  "keywords": [
+    "google-sheets",
+    "spreadsheet",
+    "mcp"
+  ],
   "server": {
     "type": "node",
     "entry_point": "dist/index.js",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/dist/index.js"],
+      "args": [
+        "${__dirname}/dist/index.js"
+      ],
       "env": {
         "GOOGLE_OAUTH_CLIENT_ID": "${user_config.oauth_client_id}",
         "GOOGLE_OAUTH_CLIENT_SECRET": "${user_config.oauth_client_secret}",
@@ -45,7 +51,11 @@
     }
   },
   "compatibility": {
-    "platforms": ["darwin", "win32", "linux"],
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
     "runtimes": {
       "node": ">=20"
     }
