@@ -30,7 +30,16 @@ function describeError(err: unknown): string {
           : "";
     return `Google Sheets API error${status ? ` ${status}` : ""}: ${apiMessage}${hint}`;
   }
-  return err instanceof Error ? err.message : String(err);
+  const message = err instanceof Error ? err.message : String(err);
+  if (message.includes("Could not load the default credentials")) {
+    return (
+      "No Google credentials configured. Set GOOGLE_OAUTH_CLIENT_ID and " +
+      "GOOGLE_OAUTH_CLIENT_SECRET (recommended for personal use), or " +
+      "GOOGLE_SERVICE_ACCOUNT_KEY_FILE / GOOGLE_SERVICE_ACCOUNT_KEY, or " +
+      "GOOGLE_APPLICATION_CREDENTIALS. See the README for setup."
+    );
+  }
+  return message;
 }
 
 /** Run a tool body, converting thrown errors into tool error results. */
