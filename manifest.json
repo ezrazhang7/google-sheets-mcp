@@ -3,7 +3,7 @@
   "manifest_version": "0.4",
   "name": "google-sheets-mcp",
   "display_name": "Google Sheets",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Read and edit Google Sheets in place: update cells, append rows, insert/delete rows and columns, write formulas, format, and find & replace.",
   "author": {
     "name": "Ezra Zhang"
@@ -24,8 +24,7 @@
       ],
       "env": {
         "GOOGLE_OAUTH_CLIENT_ID": "${user_config.oauth_client_id}",
-        "GOOGLE_OAUTH_CLIENT_SECRET": "${user_config.oauth_client_secret}",
-        "GOOGLE_SERVICE_ACCOUNT_KEY_FILE": "${user_config.service_account_key_file}"
+        "GOOGLE_OAUTH_CLIENT_SECRET": "${user_config.oauth_client_secret}"
       }
     }
   },
@@ -33,21 +32,15 @@
     "oauth_client_id": {
       "type": "string",
       "title": "Google OAuth Client ID",
-      "description": "OAuth 2.0 Desktop client ID from Google Cloud Console (APIs & Services > Credentials). Leave empty if using a service account key file.",
-      "required": false
+      "description": "OAuth 2.0 Desktop client ID from Google Cloud Console (APIs & Services > Credentials). Ends in .apps.googleusercontent.com",
+      "required": true
     },
     "oauth_client_secret": {
       "type": "string",
       "title": "Google OAuth Client Secret",
       "description": "OAuth 2.0 Desktop client secret paired with the client ID above.",
       "sensitive": true,
-      "required": false
-    },
-    "service_account_key_file": {
-      "type": "file",
-      "title": "Service Account Key File (alternative)",
-      "description": "Path to a service-account JSON key. Only needed if not using OAuth; share target sheets with the service account's email.",
-      "required": false
+      "required": true
     }
   },
   "compatibility": {

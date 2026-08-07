@@ -62,6 +62,11 @@ Install Extension…**. Paste your Client ID and Secret into the extension setti
 On first use a browser opens to authorize; the refresh token is cached at
 `~/.config/google-sheets-mcp/token.json`.
 
+The extension asks only for OAuth credentials. Service-account auth is still
+supported when running the server directly or remotely — set
+`GOOGLE_SERVICE_ACCOUNT_KEY_FILE` or `GOOGLE_SERVICE_ACCOUNT_KEY` in the
+environment instead.
+
 > Local MCP servers do **not** run in cloud Cowork sessions or on claude.ai — for those,
 > use the remote deployment below.
 

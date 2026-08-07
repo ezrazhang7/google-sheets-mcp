@@ -7,7 +7,7 @@ import { registerFormatTools } from "./tools/format.js";
 import { registerAdvancedTools } from "./tools/advanced.js";
 
 export const SERVER_NAME = "google-sheets-mcp";
-export const SERVER_VERSION = "0.2.0";
+export const SERVER_VERSION = "0.2.1";
 
 const INSTRUCTIONS = `Edit Google Sheets in place — never create a copy to make a change.
 Typical flow: list_spreadsheets or get_spreadsheet_info to find the target,
