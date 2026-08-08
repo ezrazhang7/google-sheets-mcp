@@ -31,3 +31,7 @@ console.log(refreshToken);
 console.log("\nStore it with:");
 console.log("  npx wrangler secret put GOOGLE_REFRESH_TOKEN");
 console.log("─────────────────────────────────────────────\n");
+
+// Exit explicitly: a lingering browser socket must never leave this CLI
+// hanging with the shell's stdin captured.
+process.exit(0);

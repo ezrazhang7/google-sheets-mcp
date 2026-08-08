@@ -3,7 +3,7 @@
   "manifest_version": "0.4",
   "name": "google-sheets-mcp",
   "display_name": "Google Sheets",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Read and edit Google Sheets in place: update cells, append rows, insert/delete rows and columns, write formulas, format, and find & replace.",
   "author": {
     "name": "Ezra Zhang"

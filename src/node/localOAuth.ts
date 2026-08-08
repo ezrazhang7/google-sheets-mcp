@@ -183,13 +183,17 @@ export function runLoopbackFlow(
       }
       const code = url.searchParams.get("code");
       const error = url.searchParams.get("error");
-      res.writeHead(200, { "Content-Type": "text/html" });
+      res.writeHead(200, { "Content-Type": "text/html", Connection: "close" });
       res.end(
         code
           ? "<h3>Google Sheets MCP is authorized.</h3>You can close this tab."
           : `<h3>Authorization failed.</h3>${error ?? "No code returned."}`,
       );
+      // close() alone can leave the process alive: browsers hold speculative
+      // keep-alive sockets that Node does not treat as idle. Drop them all so
+      // the event loop can drain and a CLI caller can exit naturally.
       server.close();
+      server.closeAllConnections();
       if (!code) {
         reject(new Error(`OAuth authorization failed: ${error ?? "no code"}`));
         return;
