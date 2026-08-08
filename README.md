@@ -43,7 +43,12 @@ numbers and columns are letters, exactly as in the Sheets UI.
 1. In [Google Cloud Console](https://console.cloud.google.com/), create or pick a project.
 2. Enable the **Google Sheets API** and **Google Drive API**.
 3. **APIs & Services → OAuth consent screen**: set it up, add yourself under **Test users**.
-   Consider **Publish app** — while in Testing mode Google expires refresh tokens after 7 days.
+   Then click **Publish app**. This does *not* require Google's verification review —
+   personal-use apps (under 100 known users) are exempt; you just click through an
+   "unverified app" warning once during authorization. Publishing matters because while
+   the app sits in **Testing**, Google revokes refresh tokens every 7 days.
+   The local extension recovers automatically by re-opening the browser, but a remote
+   deployment needs a manual re-mint each time.
 4. **APIs & Services → Credentials → Create Credentials → OAuth client ID →
    Desktop app**. Save the **Client ID** and **Client Secret**.
 

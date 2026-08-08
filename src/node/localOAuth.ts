@@ -4,7 +4,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
-import { DEFAULT_SCOPES, TOKEN_ENDPOINT } from "../google/auth.js";
+import {
+  DEFAULT_SCOPES,
+  RefreshTokenProvider,
+  TOKEN_ENDPOINT,
+  type TokenProvider,
+} from "../google/auth.js";
 
 const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const FLOW_TIMEOUT_MS = 5 * 60 * 1000;
@@ -27,9 +32,66 @@ export async function getCachedRefreshToken(
 ): Promise<string> {
   const cached = await readCachedToken();
   if (cached) return cached;
+  return mintAndCache(clientId, clientSecret);
+}
+
+/** Run the consent flow unconditionally and persist the resulting token. */
+async function mintAndCache(
+  clientId: string,
+  clientSecret: string,
+): Promise<string> {
   const refreshToken = await runLoopbackFlow(clientId, clientSecret);
   await writeCachedToken(refreshToken);
   return refreshToken;
+}
+
+/**
+ * `invalid_grant` means the stored refresh token no longer works — most often
+ * because Google revoked it, which it does after 7 days for any OAuth app
+ * still in "Testing" mode, but also after a password change or manual revoke.
+ */
+function isInvalidGrant(err: unknown): boolean {
+  return err instanceof Error && err.message.includes("invalid_grant");
+}
+
+/**
+ * A token provider for local runs that heals itself: when the cached refresh
+ * token stops working it discards it, re-runs browser consent, and retries
+ * once. Without this a Testing-mode app breaks every 7 days with an opaque
+ * error and no way to recover short of deleting the cache by hand.
+ */
+export function createLocalOAuthProvider(
+  clientId: string,
+  clientSecret: string,
+): TokenProvider {
+  let delegate: RefreshTokenProvider | undefined;
+
+  const build = async (forceConsent: boolean): Promise<RefreshTokenProvider> =>
+    new RefreshTokenProvider(
+      clientId,
+      clientSecret,
+      forceConsent
+        ? await mintAndCache(clientId, clientSecret)
+        : await getCachedRefreshToken(clientId, clientSecret),
+    );
+
+  return {
+    async getAccessToken(): Promise<string> {
+      delegate ??= await build(false);
+      try {
+        return await delegate.getAccessToken();
+      } catch (err) {
+        if (!isInvalidGrant(err)) throw err;
+        console.error(
+          "[google-sheets-mcp] Saved Google authorization is no longer valid " +
+            "(Google revokes refresh tokens after 7 days while the OAuth app is " +
+            'in "Testing" mode). Re-authorizing in your browser…',
+        );
+        delegate = await build(true);
+        return delegate.getAccessToken();
+      }
+    },
+  };
 }
 
 async function readCachedToken(): Promise<string | undefined> {

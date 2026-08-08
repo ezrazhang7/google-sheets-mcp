@@ -3,9 +3,9 @@ import { readFile } from "node:fs/promises";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { createServer } from "./server.js";
 import { GoogleClient } from "./google/client.js";
-import { RefreshTokenProvider, type TokenProvider } from "./google/auth.js";
+import type { TokenProvider } from "./google/auth.js";
 import { MISSING_CREDENTIALS_MESSAGE, providerFromCredentials } from "./config.js";
-import { getCachedRefreshToken } from "./node/localOAuth.js";
+import { createLocalOAuthProvider } from "./node/localOAuth.js";
 
 /**
  * Resolve credentials for a local (stdio) run, in order:
@@ -32,8 +32,7 @@ async function resolveTokenProvider(): Promise<TokenProvider> {
   const clientId = env["GOOGLE_OAUTH_CLIENT_ID"];
   const clientSecret = env["GOOGLE_OAUTH_CLIENT_SECRET"];
   if (clientId && clientSecret) {
-    const refreshToken = await getCachedRefreshToken(clientId, clientSecret);
-    return new RefreshTokenProvider(clientId, clientSecret, refreshToken);
+    return createLocalOAuthProvider(clientId, clientSecret);
   }
   throw new Error(MISSING_CREDENTIALS_MESSAGE);
 }
