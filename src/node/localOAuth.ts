@@ -12,13 +12,95 @@ import {
 } from "../google/auth.js";
 
 const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
+
+/** How long the interactive CLI (`mint-token`) waits for the browser. */
 const FLOW_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * How long a *tool call* waits before reporting that consent is pending.
+ * MCP clients abandon a tool call around 60s, so blocking for the full
+ * consent window just produces an opaque timeout. Instead we surface an
+ * actionable message quickly and let the flow finish in the background —
+ * the next tool call picks up the freshly cached token.
+ */
+const CONSENT_HINT_MS = 20_000;
+
+const AUTH_PENDING_MESSAGE =
+  "Google authorization needed. A browser window should have opened — approve " +
+  'access there (if you see "Google hasn\'t verified this app", click Advanced → ' +
+  "continue), then retry this request. If Google says the app is limited to " +
+  "approved testers, either add your Google account under APIs & Services → " +
+  "OAuth consent screen → Test users, or click Publish app on that screen to " +
+  "lift the tester restriction.";
 
 export function tokenCachePath(): string {
   return (
     process.env["GSHEETS_TOKEN_PATH"] ??
     path.join(homedir(), ".config", "google-sheets-mcp", "token.json")
   );
+}
+
+async function readCachedToken(): Promise<string | undefined> {
+  try {
+    const parsed = JSON.parse(await readFile(tokenCachePath(), "utf8")) as {
+      refresh_token?: string;
+    };
+    return parsed.refresh_token || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function writeCachedToken(refreshToken: string): Promise<void> {
+  const file = tokenCachePath();
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, JSON.stringify({ refresh_token: refreshToken }, null, 2), {
+    mode: 0o600,
+  });
+}
+
+/** Run the consent flow and persist the resulting token. */
+async function mintAndCache(
+  clientId: string,
+  clientSecret: string,
+): Promise<string> {
+  const refreshToken = await runLoopbackFlow(clientId, clientSecret);
+  await writeCachedToken(refreshToken);
+  return refreshToken;
+}
+
+/** At most one consent flow runs at a time; later callers join the same one. */
+let pendingConsent: Promise<string> | undefined;
+
+/**
+ * Start (or join) a consent flow, but give up waiting after CONSENT_HINT_MS
+ * and report what the user needs to do. The flow itself keeps running, so
+ * approving in the browser still caches the token for the next call.
+ */
+async function beginOrJoinConsent(
+  clientId: string,
+  clientSecret: string,
+): Promise<string> {
+  if (!pendingConsent) {
+    const flow = mintAndCache(clientId, clientSecret).finally(() => {
+      pendingConsent = undefined;
+    });
+    // Nobody may be awaiting this once we stop racing it; swallow the
+    // rejection here so it never surfaces as an unhandled promise rejection.
+    // Real awaiters still observe it through their own reference.
+    flow.catch(() => {});
+    pendingConsent = flow;
+  }
+
+  let timer: NodeJS.Timeout | undefined;
+  const hint = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(AUTH_PENDING_MESSAGE)), CONSENT_HINT_MS);
+  });
+  try {
+    return await Promise.race([pendingConsent, hint]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -30,19 +112,7 @@ export async function getCachedRefreshToken(
   clientId: string,
   clientSecret: string,
 ): Promise<string> {
-  const cached = await readCachedToken();
-  if (cached) return cached;
-  return mintAndCache(clientId, clientSecret);
-}
-
-/** Run the consent flow unconditionally and persist the resulting token. */
-async function mintAndCache(
-  clientId: string,
-  clientSecret: string,
-): Promise<string> {
-  const refreshToken = await runLoopbackFlow(clientId, clientSecret);
-  await writeCachedToken(refreshToken);
-  return refreshToken;
+  return (await readCachedToken()) ?? (await beginOrJoinConsent(clientId, clientSecret));
 }
 
 /**
@@ -71,7 +141,7 @@ export function createLocalOAuthProvider(
       clientId,
       clientSecret,
       forceConsent
-        ? await mintAndCache(clientId, clientSecret)
+        ? await beginOrJoinConsent(clientId, clientSecret)
         : await getCachedRefreshToken(clientId, clientSecret),
     );
 
@@ -92,25 +162,6 @@ export function createLocalOAuthProvider(
       }
     },
   };
-}
-
-async function readCachedToken(): Promise<string | undefined> {
-  try {
-    const parsed = JSON.parse(await readFile(tokenCachePath(), "utf8")) as {
-      refresh_token?: string;
-    };
-    return parsed.refresh_token || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-async function writeCachedToken(refreshToken: string): Promise<void> {
-  const file = tokenCachePath();
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, JSON.stringify({ refresh_token: refreshToken }, null, 2), {
-    mode: 0o600,
-  });
 }
 
 /**

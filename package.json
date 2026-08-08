@@ -1,6 +1,6 @@
 {
   "name": "google-sheets-mcp",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "MCP server for Google Sheets: read, edit, append, insert/delete rows and columns, and write formulas in place",
   "main": "dist/index.js",
   "scripts": {
