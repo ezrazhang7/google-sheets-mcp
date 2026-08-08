@@ -108,8 +108,11 @@ Wrangler prints a URL like `https://google-sheets-mcp.<you>.workers.dev`. Verify
 
 **Add it to Claude**: Settings → **Connectors** → **Add custom connector**.
 
-- **URL**: `https://google-sheets-mcp.<you>.workers.dev/mcp`
-- Under advanced/header settings, send `Authorization: Bearer <your MCP_BEARER_TOKEN>`
+- If your Add-connector dialog has a **Request headers** section (beta, gradual
+  rollout): URL `https://google-sheets-mcp.<you>.workers.dev/mcp` with header
+  `authorization: Bearer <your MCP_BEARER_TOKEN>`.
+- If it doesn't, put the token in the URL path instead:
+  `https://google-sheets-mcp.<you>.workers.dev/mcp/<your MCP_BEARER_TOKEN>`.
 
 ### Security notes
 

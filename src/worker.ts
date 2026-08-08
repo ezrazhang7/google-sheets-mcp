@@ -40,10 +40,20 @@ function unauthorized(): Response {
   );
 }
 
-function isAuthorized(request: Request, env: Env): boolean {
+/**
+ * Two ways to present the shared secret:
+ *  1. `Authorization: Bearer <token>` header — preferred when the client UI
+ *     can set request headers.
+ *  2. `/mcp/<token>` in the URL path — fallback for connector UIs without a
+ *     headers field (claude.ai's Request headers section is still a gated
+ *     beta). Marginally weaker (URLs can land in logs), acceptable for a
+ *     personal deployment.
+ */
+function isAuthorized(request: Request, env: Env, pathSecret?: string): boolean {
   const expected = env.MCP_BEARER_TOKEN;
   // Fail closed: with no token configured the endpoint would be world-writable.
   if (!expected) return false;
+  if (pathSecret !== undefined && secureEquals(pathSecret, expected)) return true;
   const header = request.headers.get("Authorization") ?? "";
   const match = /^Bearer\s+(.+)$/i.exec(header.trim());
   return match?.[1] !== undefined && secureEquals(match[1], expected);
@@ -57,10 +67,13 @@ export default {
     if (url.pathname === "/health") {
       return new Response("ok", { status: 200 });
     }
-    if (url.pathname !== "/mcp") {
+
+    // Accept /mcp (header auth) or /mcp/<secret> (path auth).
+    const pathMatch = /^\/mcp(?:\/([^/]+))?$/.exec(url.pathname);
+    if (!pathMatch) {
       return new Response("Not found. The MCP endpoint is /mcp.", { status: 404 });
     }
-    if (!isAuthorized(request, env)) {
+    if (!isAuthorized(request, env, pathMatch[1])) {
       return unauthorized();
     }
 
